@@ -63,6 +63,38 @@ class Session:
     tmux_pane: str = ""
     transcript_path: Path | None = None
     duration_secs: int = 0
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
+    total_cache_read_tokens: int = 0
+    total_cache_create_tokens: int = 0
+
+    @property
+    def total_context_tokens(self) -> int:
+        return self.total_input_tokens + self.total_cache_read_tokens + self.total_cache_create_tokens
+
+    @property
+    def tokens_display(self) -> str:
+        """Human-readable token count."""
+        t = self.total_input_tokens + self.total_output_tokens
+        if t == 0:
+            return "—"
+        if t < 1000:
+            return str(t)
+        if t < 1_000_000:
+            return f"{t / 1000:.1f}K"
+        return f"{t / 1_000_000:.1f}M"
+
+    @property
+    def context_display(self) -> str:
+        """Human-readable context window usage."""
+        c = self.total_context_tokens
+        if c == 0:
+            return "—"
+        if c < 1000:
+            return str(c)
+        if c < 1_000_000:
+            return f"{c / 1000:.0f}K"
+        return f"{c / 1_000_000:.1f}M"
 
     @property
     def duration_display(self) -> str:

@@ -47,13 +47,17 @@ def _extract_tool_uses(entry: dict) -> list[tuple[str, str]]:
 
 
 def parse_transcript_summary(transcript_file: Path | None) -> dict:
-    """Parse transcript for summary stats (message count, tool count, last activity)."""
+    """Parse transcript for summary stats (message count, tool count, last activity, tokens)."""
     info = {
         "last_activity": "",
         "last_activity_time": None,
         "tool_count": 0,
         "recent_tools": [],
         "message_count": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_create_tokens": 0,
     }
 
     if not transcript_file or not transcript_file.exists():
@@ -105,6 +109,39 @@ def parse_transcript_summary(transcript_file: Path | None) -> dict:
 
     info["recent_tools"] = tools[-5:]
     return info
+
+
+def aggregate_token_usage(transcript_file: Path | None) -> dict:
+    """Scan full transcript for token usage stats. Returns totals."""
+    totals = {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_create_tokens": 0,
+    }
+    if not transcript_file or not transcript_file.exists():
+        return totals
+    try:
+        with open(transcript_file, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                # Fast filter — only parse lines that contain "usage"
+                if '"usage"' not in line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                    if entry.get("type") != "assistant":
+                        continue
+                    usage = entry.get("message", {}).get("usage", {})
+                    if usage:
+                        totals["input_tokens"] += usage.get("input_tokens", 0)
+                        totals["output_tokens"] += usage.get("output_tokens", 0)
+                        totals["cache_read_tokens"] += usage.get("cache_read_input_tokens", 0)
+                        totals["cache_create_tokens"] += usage.get("cache_creation_input_tokens", 0)
+                except json.JSONDecodeError:
+                    continue
+    except OSError:
+        pass
+    return totals
 
 
 def _parse_raw_to_entries(raw: dict) -> list[TranscriptEntry]:

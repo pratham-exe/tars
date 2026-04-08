@@ -8,7 +8,7 @@ from pathlib import Path
 
 from tars.scanner.models import HistoricalSession, Session
 from tars.scanner.tmux import build_tmux_pane_map, find_tmux_pane
-from tars.scanner.transcripts import parse_transcript_summary
+from tars.scanner.transcripts import aggregate_token_usage, parse_transcript_summary
 from tars.scanner.utils import (
     CLAUDE_DIR,
     PROJECTS_DIR,
@@ -71,6 +71,12 @@ def scan_sessions(active_only: bool = True) -> list[Session]:
         session.tool_count = transcript_info["tool_count"]
         session.recent_tools = transcript_info["recent_tools"]
         session.message_count = transcript_info["message_count"]
+
+        token_info = aggregate_token_usage(transcript_file)
+        session.total_input_tokens = token_info["input_tokens"]
+        session.total_output_tokens = token_info["output_tokens"]
+        session.total_cache_read_tokens = token_info["cache_read_tokens"]
+        session.total_cache_create_tokens = token_info["cache_create_tokens"]
 
         sessions.append(session)
 

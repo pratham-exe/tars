@@ -12,7 +12,7 @@ from textual.screen import Screen
 from textual.widgets import Label, Static
 
 from tars.helpers import time_ago
-from tars.modals import ConfirmModal, PromptModal, SessionPickerModal
+from tars.modals import ConfirmModal, FullscreenPrompts, FullscreenTranscript, PromptModal, SessionPickerModal
 from tars.scanner import (
     Session,
     generate_journal,
@@ -158,6 +158,8 @@ class DetailScreen(Screen):
         Binding("t", "transfer_context", "Transfer", priority=True),
         Binding("w", "write_journal", "Journal", priority=True),
         Binding("o", "goto_session", "Go to", priority=True),
+        Binding("T", "fullscreen_transcript", show=False, priority=True),
+        Binding("P", "fullscreen_prompts", show=False, priority=True),
         Binding("j", "scroll_down", show=False, priority=True),
         Binding("k", "scroll_up", show=False, priority=True),
         Binding("J", "focus_next_section", show=False, priority=True),
@@ -177,7 +179,7 @@ class DetailScreen(Screen):
             with Horizontal(id="detail-header"):
                 yield Label("", id="detail-name")
                 yield Label(
-                    "[dim]q[/dim] back  [dim]i[/dim] send  [dim]t[/dim] transfer  [dim]w[/dim] journal  [dim]o[/dim] go to  [dim]j/k[/dim] scroll",
+                    "[dim]q[/dim] back  [dim]i[/dim] send  [dim]t[/dim] transfer  [dim]w[/dim] journal  [dim]o[/dim] go to  [dim]T[/dim] transcript  [dim]P[/dim] prompts",
                     id="detail-hints",
                 )
             yield Static("", id="detail-info")
@@ -218,7 +220,9 @@ class DetailScreen(Screen):
             f"[b]Session ID:[/b] {s.session_id}\n"
             f"[b]Started:[/b]    {s.started_at.strftime('%Y-%m-%d %H:%M:%S')} ({time_ago(s.started_at)})        "
             f"[b]Messages:[/b] {s.message_count}        "
-            f"[b]Tools:[/b] {s.tool_count}"
+            f"[b]Tools:[/b] {s.tool_count}\n"
+            f"[b]Tokens:[/b]      {s.tokens_display} (in: {s.total_input_tokens:,}  out: {s.total_output_tokens:,})        "
+            f"[b]Context:[/b] {s.context_display} (cache read: {s.total_cache_read_tokens:,}  cache write: {s.total_cache_create_tokens:,})"
         )
         self.query_one("#detail-info", Static).update(info)
 
@@ -367,6 +371,12 @@ class DetailScreen(Screen):
             return
         if not switch_to_tmux_pane(pane):
             self.notify("Failed to switch", timeout=2)
+
+    def action_fullscreen_transcript(self) -> None:
+        self.app.push_screen(FullscreenTranscript(self.session))
+
+    def action_fullscreen_prompts(self) -> None:
+        self.app.push_screen(FullscreenPrompts(self.session))
 
     def action_go_back(self) -> None:
         self.app.pop_screen()
