@@ -146,26 +146,35 @@ This types directly into the running Claude session. The live transcript tail th
 
 ```
 ~/tars/
-├── pyproject.toml          # Package config, dependencies, CLI entrypoint
+├── pyproject.toml              # Package config, dependencies, CLI entrypoint
 ├── .gitignore
 ├── README.md
 └── tars/
     ├── __init__.py
-    ├── __main__.py         # python -m tars
-    ├── scanner.py          # Data layer — reads Claude files, tmux integration
-    └── app.py              # UI layer — Textual screens, modals, keybindings
+    ├── __main__.py             # python -m tars
+    ├── app.py                  # App entry point (29 lines)
+    ├── helpers.py              # Shared utilities — time_ago, truncate, escape_markup
+    ├── theme.py                # Gruvbox color scheme, ASCII banner
+    ├── scanner/                # Data layer — reads Claude Code files
+    │   ├── models.py           # Session, TranscriptEntry, HistoricalSession
+    │   ├── utils.py            # File I/O, PID checks, path resolution
+    │   ├── tmux.py             # Pane detection, send-keys, spawn, resume, switch
+    │   ├── sessions.py         # Scan, cleanup, history, resumable list
+    │   ├── transcripts.py      # Parse JSONL transcripts, tail for live updates
+    │   └── actions.py          # Context transfer, task delegation, journaling
+    ├── screens/                # UI screens
+    │   ├── home.py             # Card-based session list with grouping
+    │   └── detail.py           # Session info, prompt history, live transcript
+    └── modals/                 # Floating dialogs
+        ├── confirm.py          # y/n confirmation
+        ├── spawn.py            # Name input for new session
+        ├── delegate.py         # Task description editor
+        ├── prompt.py           # Send-keys text editor
+        ├── session_picker.py   # Pick target for context transfer
+        └── resume.py           # Browse and resume historical sessions
 ```
 
-**scanner.py** — the brain:
-- Session scanning and transcript parsing
-- Tmux pane resolution and send-keys
-- Context extraction, task delegation, journal generation
-- Process tree walking, activity detection
-
-**app.py** — the face:
-- `HomeScreen` — card-based session list with grouping
-- `DetailScreen` — session info, prompt history, live transcript tail
-- Modals — ConfirmModal, SpawnModal, PromptModal, SessionPickerModal, ResumePickerModal, DelegateModal
+Each file is under 420 lines, most under 200. Single responsibility throughout.
 
 ---
 
