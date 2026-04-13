@@ -170,13 +170,27 @@ def list_resumable_sessions(limit: int = 30) -> list[HistoricalSession]:
                 lines = 0
                 first_prompt = ""
 
+                transcript_name = ""
+
+                # Read last 30 lines to find the most recent agent-name
+                tail_lines = read_last_n_lines(f, 30)
+                for tl in reversed(tail_lines):
+                    try:
+                        te = json.loads(tl)
+                        if te.get("type") == "agent-name":
+                            transcript_name = te.get("agentName", "")
+                            break
+                    except json.JSONDecodeError:
+                        pass
+
                 with open(f, "r", encoding="utf-8", errors="replace") as fh:
                     for line in fh:
                         lines += 1
-                        if lines > 20 and first_prompt:
-                            break
                         try:
                             entry = json.loads(line)
+                            # Also check early lines for agent-name
+                            if not transcript_name and entry.get("type") == "agent-name":
+                                transcript_name = entry.get("agentName", "")
                             if not first_prompt and entry.get("type") == "user":
                                 msg = entry.get("message", {})
                                 content = msg.get("content", "")
@@ -187,16 +201,22 @@ def list_resumable_sessions(limit: int = 30) -> list[HistoricalSession]:
                                         if isinstance(b, dict) and b.get("type") == "text":
                                             first_prompt = b.get("text", "")[:80]
                                             break
+                            if lines > 30 and first_prompt:
+                                lines += sum(1 for _ in fh)
+                                break
                         except json.JSONDecodeError:
                             pass
 
                 if lines < 3:
                     continue
 
+                # Prefer: session file name > transcript name > empty
+                name = session_names.get(uuid, "") or transcript_name
+
                 from datetime import timezone
                 results.append(HistoricalSession(
                     session_id=uuid,
-                    name=session_names.get(uuid, ""),
+                    name=name,
                     first_prompt=first_prompt,
                     line_count=lines,
                     modified=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),

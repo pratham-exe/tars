@@ -52,14 +52,14 @@ class DelegateModal(ModalScreen[str | None]):
     CSS = CSS
     BINDINGS = [
         Binding("escape", "cancel", priority=True),
-        Binding("ctrl+s", "send", priority=True),
+        Binding("ctrl+d", "send", priority=True),
     ]
 
     def compose(self) -> ComposeResult:
         with Vertical(id="delegate-dialog"):
             yield Label(f"[{ORANGE}][b]Delegate Task[/b][/{ORANGE}]", id="delegate-title")
             yield TextArea(id="delegate-editor")
-            yield Label("[dim]ctrl+s[/dim] delegate  [dim]esc[/dim] cancel", id="delegate-hint")
+            yield Label("[dim]ctrl+d[/dim] delegate  [dim]esc[/dim] cancel", id="delegate-hint")
 
     def on_mount(self) -> None:
         self.query_one("#delegate-editor", TextArea).focus()

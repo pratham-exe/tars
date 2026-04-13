@@ -68,80 +68,61 @@ def transfer_context(source: Session, target: Session) -> bool:
 
 # ── Task Delegation ──────────────────────────────────────────────────────────
 
-def delegate_task(task: str, cwd: str | None = None) -> list[str]:
-    """Break a task into sub-tasks using claude -p and spawn sessions for each."""
-    prompt = (
-        f"Break this task into 2-4 independent sub-tasks that can be worked on in parallel by separate AI coding agents. "
-        f"Each sub-task should be self-contained and actionable. "
-        f"Output ONLY a JSON array, no markdown, no explanation. Format: "
-        f'[{{"name": "short-kebab-name", "prompt": "detailed instruction for the agent"}}]\n\n'
-        f"Task: {task}"
-    )
-
+def delegate_task(task: str, cwd: str | None = None) -> dict:
+    """Spawn an orchestrator Jarvis session that breaks the task down and spawns its own workers.
+    Returns {"orchestrator": name, "workers": []} — workers are spawned by the orchestrator itself."""
     try:
-        result = subprocess.run(
-            ["claude", "-p", prompt, "--output-format", "json"],
-            capture_output=True, text=True, timeout=60,
-            cwd=cwd,
-        )
-        if result.returncode != 0:
-            return []
+        orch_name = "orchestrator"
+        if not spawn_session_in_tmux(cwd=cwd, name=orch_name):
+            return {}
 
-        output = result.stdout.strip()
-        try:
-            wrapper = json.loads(output)
-            if isinstance(wrapper, dict) and "result" in wrapper:
-                output = wrapper["result"]
-        except json.JSONDecodeError:
-            pass
+        def _brief_orchestrator():
+            time.sleep(10)
 
-        match = re.search(r'\[.*\]', output, re.DOTALL)
-        if not match:
-            return []
+            from tars.scanner.sessions import scan_sessions
+            sessions = scan_sessions(active_only=True)
+            orch_session = next((s for s in sessions if s.name == orch_name), None)
+            if not orch_session or not orch_session.tmux_pane:
+                return
 
-        subtasks = json.loads(match.group())
-        if not isinstance(subtasks, list):
-            return []
+            # Detect which tmux session to spawn workers in
+            tmux_session = orch_session.tmux_pane.split(":")[0] if orch_session.tmux_pane else "ai"
+            project_cwd = cwd or orch_session.cwd
 
-        spawned = []
-        for st in subtasks:
-            name = st.get("name", "subtask")
-            prompt_text = st.get("prompt", task)
+            orch_prompt = (
+                f"You are the ORCHESTRATOR. Your job is to break a task into sub-tasks, spawn worker sessions, send them work, and track progress.\n\n"
+                f"TASK:\n{task}\n\n"
+                f"HOW TO SPAWN WORKERS:\n"
+                f"Use the Bash tool to spawn each worker Jarvis session:\n"
+                f'  tmux new-window -d -t {tmux_session} -c "{project_cwd}" zsh -ic \'jarvis --name "worker-<name>"\'\n'
+                f"Wait ~8 seconds after spawning for each worker to boot.\n\n"
+                f"HOW TO SEND TASKS TO WORKERS:\n"
+                f"1. Write the prompt to a temp file:  echo \'your prompt here\' > /tmp/tars-worker-msg.txt\n"
+                f"2. Send it:  tmux load-buffer /tmp/tars-worker-msg.txt && tmux paste-buffer -t {tmux_session}:<window> && tmux send-keys -t {tmux_session}:<window> Enter\n"
+                f"To find worker window numbers:  tmux list-windows -t {tmux_session} -F '#{{window_index}} #{{window_name}}'\n\n"
+                f"HOW TO CHECK WORKER PROGRESS:\n"
+                f"Worker transcripts are in ~/.claude/projects/ as JSONL files. Find them by session ID.\n"
+                f"Or list windows:  tmux list-windows -t {tmux_session}\n"
+                f"Read the last 30 lines of a worker's transcript to see what they're doing.\n\n"
+                f"WORKFLOW:\n"
+                f"1. Analyze the task and decide how many workers you need (2-4)\n"
+                f"2. Spawn that many worker sessions\n"
+                f"3. Send each worker their specific sub-task\n"
+                f"4. Wait for the user to ask for status — then check worker transcripts and report\n"
+                f"5. When all workers are done, synthesize results\n\n"
+                f"START NOW: Analyze the task, decide on sub-tasks, and spawn workers."
+            )
+            send_keys_to_tmux(orch_session.tmux_pane, orch_prompt)
 
-            if spawn_session_in_tmux(cwd=cwd, name=name):
-                spawned.append(name)
+        threading.Thread(target=_brief_orchestrator, daemon=True).start()
 
-                def _send_prompt(pane_name: str, text: str):
-                    time.sleep(8)
-                    from tars.scanner.sessions import scan_sessions
-                    sessions = scan_sessions(active_only=True)
-                    for s in sessions:
-                        if s.name == pane_name and s.tmux_pane:
-                            send_keys_to_tmux(s.tmux_pane, text)
-                            return
-                    # Fallback: newest window
-                    try:
-                        r = subprocess.run(
-                            ["tmux", "list-windows", "-F", "#{window_index}"],
-                            capture_output=True, text=True, timeout=3,
-                        )
-                        if r.returncode == 0:
-                            windows = r.stdout.strip().splitlines()
-                            if windows:
-                                send_keys_to_tmux(f":{windows[-1]}", text)
-                    except (subprocess.TimeoutExpired, OSError):
-                        pass
+        return {
+            "orchestrator": orch_name,
+            "workers": [],  # Workers will be spawned by the orchestrator itself
+        }
 
-                threading.Thread(
-                    target=_send_prompt,
-                    args=(name, prompt_text),
-                    daemon=True,
-                ).start()
-
-        return spawned
-
-    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-        return []
+    except (FileNotFoundError, OSError):
+        return {}
 
 
 # ── Auto-Journaling ──────────────────────────────────────────────────────────

@@ -12,7 +12,7 @@ from textual.screen import Screen
 from textual.widgets import Label, Static
 
 from tars.helpers import time_ago
-from tars.modals import ConfirmModal, FullscreenPrompts, FullscreenTranscript, PromptModal, SessionPickerModal
+from tars.modals import ConfirmModal, FullscreenPrompts, FullscreenTranscript, PromptModal, RenameModal, SessionPickerModal
 from tars.scanner import (
     Session,
     generate_journal,
@@ -158,6 +158,7 @@ class DetailScreen(Screen):
         Binding("t", "transfer_context", "Transfer", priority=True),
         Binding("w", "write_journal", "Journal", priority=True),
         Binding("o", "goto_session", "Go to", priority=True),
+        Binding("e", "rename_session", show=False, priority=True),
         Binding("T", "fullscreen_transcript", show=False, priority=True),
         Binding("P", "fullscreen_prompts", show=False, priority=True),
         Binding("j", "scroll_down", show=False, priority=True),
@@ -179,7 +180,7 @@ class DetailScreen(Screen):
             with Horizontal(id="detail-header"):
                 yield Label("", id="detail-name")
                 yield Label(
-                    "[dim]q[/dim] back  [dim]i[/dim] send  [dim]t[/dim] transfer  [dim]w[/dim] journal  [dim]o[/dim] go to  [dim]T[/dim] transcript  [dim]P[/dim] prompts",
+                    "[dim]q[/dim] back  [dim]i[/dim] send  [dim]t[/dim] transfer  [dim]w[/dim] journal  [dim]e[/dim] rename  [dim]o[/dim] go to  [dim]T[/dim] transcript  [dim]P[/dim] prompts",
                     id="detail-hints",
                 )
             yield Static("", id="detail-info")
@@ -371,6 +372,23 @@ class DetailScreen(Screen):
             return
         if not switch_to_tmux_pane(pane):
             self.notify("Failed to switch", timeout=2)
+
+    def action_rename_session(self) -> None:
+        if not self.session.is_alive or not self.session.tmux_pane:
+            self.notify("Session must be alive with a tmux pane", timeout=2)
+            return
+
+        def on_result(name: str | None) -> None:
+            if name is None or not name:
+                return
+            if send_keys_to_tmux(self.session.tmux_pane, f"/rename {name}"):
+                self.session.name = name
+                self._render_session()
+                self.notify(f"Renamed to: {name}", timeout=2)
+            else:
+                self.notify("Failed to rename", timeout=2)
+
+        self.app.push_screen(RenameModal(self.session.name), on_result)
 
     def action_fullscreen_transcript(self) -> None:
         self.app.push_screen(FullscreenTranscript(self.session))

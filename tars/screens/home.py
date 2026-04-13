@@ -131,6 +131,7 @@ class HomeScreen(Screen):
         Binding("n", "spawn_session", "New", priority=True),
         Binding("a", "resume_session", "Resume", priority=True),
         Binding("d", "delegate_task", "Delegate", priority=True),
+        Binding("D", "open_delegation", "Deleg View", priority=True),
         Binding("x", "kill_session", "Kill", priority=True),
         Binding("slash", "open_filter", "/Search", priority=True),
         Binding("j", "cursor_down", show=False, priority=True),
@@ -146,6 +147,7 @@ class HomeScreen(Screen):
         super().__init__()
         self._cursor: int = 0
         self._visible_session_ids: list[str] = []
+        self._last_delegation: tuple[str, str] | None = None  # (task, orch_name)
 
     def compose(self) -> ComposeResult:
         with Vertical(id="main-container"):
@@ -173,13 +175,13 @@ class HomeScreen(Screen):
         return next((s for s in self.sessions if s.session_id == sid), None)
 
     def action_cursor_down(self) -> None:
-        if self._cursor < len(self._visible_session_ids) - 1:
-            self._cursor += 1
+        if self._visible_session_ids:
+            self._cursor = (self._cursor + 1) % len(self._visible_session_ids)
             self._update_selection()
 
     def action_cursor_up(self) -> None:
-        if self._cursor > 0:
-            self._cursor -= 1
+        if self._visible_session_ids:
+            self._cursor = (self._cursor - 1) % len(self._visible_session_ids)
             self._update_selection()
 
     def _update_selection(self) -> None:
@@ -373,20 +375,46 @@ class HomeScreen(Screen):
         def on_result(task: str | None) -> None:
             if not task:
                 return
-            self.notify("Delegating task — breaking down and spawning agents...", timeout=5)
-            self._run_delegation(task, cwd)
+            self.notify("Delegating task — breaking down and spawning agents...", timeout=10)
+            # Store args for the worker thread to pick up
+            self._deleg_task = task
+            self._deleg_cwd = cwd
+            self._run_delegation()
 
         self.app.push_screen(DelegateModal(), on_result)
 
     @work(thread=True)
-    def _run_delegation(self, task: str, cwd: str | None) -> None:
-        spawned = delegate_task(task, cwd)
-        if spawned:
-            msg = f"Spawned {len(spawned)} agents: {', '.join(spawned)}"
+    def _run_delegation(self) -> None:
+        task_text = self._deleg_task
+        cwd = self._deleg_cwd
+        result = delegate_task(task_text, cwd)
+        if result and result.get("orchestrator"):
+            orch_name = result["orchestrator"]
+            self._pending_delegation = (task_text, orch_name)
+            self.app.call_from_thread(self._open_pending_delegation)
         else:
-            msg = "Failed to delegate — check that claude CLI is available"
-        self.app.call_from_thread(self.notify, msg, timeout=5)
+            self.app.call_from_thread(
+                self.notify, "Failed to spawn orchestrator", timeout=5
+            )
         self.app.call_from_thread(self._apply_refresh, scan_sessions(active_only=False))
+
+    def _open_pending_delegation(self) -> None:
+        if hasattr(self, "_pending_delegation"):
+            task_text, orch_name = self._pending_delegation
+            del self._pending_delegation
+            self._last_delegation = (str(task_text), str(orch_name))
+            from tars.screens.delegation import DelegationScreen
+            self.notify("Orchestrator spawned — it will create workers", timeout=3)
+            self.app.push_screen(DelegationScreen(str(task_text), str(orch_name)))
+
+    def action_open_delegation(self) -> None:
+        """Reopen the last delegation dashboard."""
+        if not self._last_delegation:
+            self.notify("No active delegation — press d to start one", timeout=2)
+            return
+        task_text, orch_name = self._last_delegation
+        from tars.screens.delegation import DelegationScreen
+        self.app.push_screen(DelegationScreen(task_text, orch_name))
 
     def action_resume_session(self) -> None:
         self.notify("Loading sessions...", timeout=2)

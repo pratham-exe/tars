@@ -70,14 +70,55 @@ def switch_to_tmux_pane(pane: str) -> bool:
 
 
 def send_keys_to_tmux(pane: str, text: str) -> bool:
-    """Send keystrokes to a tmux pane."""
+    """Send text to a tmux pane and press Enter.
+    Uses bracket paste mode to prevent newlines from being interpreted as Enter."""
     if not pane:
         return False
     try:
-        subprocess.run(
-            ["tmux", "send-keys", "-t", pane, text, "Enter"],
-            capture_output=True, timeout=5,
-        )
+        import tempfile
+        import time
+        import os
+
+        clean_text = text.rstrip("\n")
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+            f.write(clean_text)
+            tmp_path = f.name
+        try:
+            # Load text into tmux buffer
+            r1 = subprocess.run(
+                ["tmux", "load-buffer", tmp_path],
+                capture_output=True, timeout=5,
+            )
+            if r1.returncode != 0:
+                return False
+
+            # Enable bracket paste mode so the app treats the paste as one block
+            # This prevents newlines from being interpreted as Enter
+            subprocess.run(
+                ["tmux", "send-keys", "-t", pane, "\x1b[200~"],
+                capture_output=True, timeout=5,
+            )
+            # Paste the buffer
+            subprocess.run(
+                ["tmux", "paste-buffer", "-t", pane],
+                capture_output=True, timeout=5,
+            )
+            # End bracket paste mode
+            subprocess.run(
+                ["tmux", "send-keys", "-t", pane, "\x1b[201~"],
+                capture_output=True, timeout=5,
+            )
+
+            time.sleep(0.3)
+
+            # Now press Enter to submit
+            subprocess.run(
+                ["tmux", "send-keys", "-t", pane, "Enter"],
+                capture_output=True, timeout=5,
+            )
+        finally:
+            os.unlink(tmp_path)
         return True
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
         return False

@@ -48,11 +48,18 @@ PromptModal {
 """
 
 
+# Per-session draft storage
+_drafts: dict[str, str] = {}
+
+
 class PromptModal(ModalScreen[str]):
+    """Prompt modal with per-session draft persistence.
+    Returns the text to send, or None if cancelled (draft saved)."""
+
     CSS = CSS
     BINDINGS = [
         Binding("escape", "cancel", priority=True),
-        Binding("ctrl+s", "send", priority=True),
+        Binding("ctrl+d", "send", priority=True),
     ]
 
     def __init__(self, pane: str) -> None:
@@ -63,13 +70,27 @@ class PromptModal(ModalScreen[str]):
         with Vertical(id="prompt-dialog"):
             yield Label(f"Send to [{ORANGE}][b]{self._pane}[/b][/{ORANGE}]", id="prompt-title")
             yield TextArea(id="prompt-editor")
-            yield Label("[dim]ctrl+s[/dim] send  [dim]esc[/dim] cancel", id="prompt-hint")
+            yield Label("[dim]ctrl+d[/dim] send  [dim]esc[/dim] cancel (draft saved)", id="prompt-hint")
 
     def on_mount(self) -> None:
-        self.query_one("#prompt-editor", TextArea).focus()
+        editor = self.query_one("#prompt-editor", TextArea)
+        # Restore draft if one exists
+        draft = _drafts.get(self._pane, "")
+        if draft:
+            editor.load_text(draft)
+        editor.focus()
 
     def action_send(self) -> None:
-        self.dismiss(self.query_one("#prompt-editor", TextArea).text.strip())
+        text = self.query_one("#prompt-editor", TextArea).text.strip()
+        # Clear draft on send
+        _drafts.pop(self._pane, None)
+        self.dismiss(text)
 
     def action_cancel(self) -> None:
+        text = self.query_one("#prompt-editor", TextArea).text
+        if text.strip():
+            _drafts[self._pane] = text
+        else:
+            # Cleared the text — remove the draft too
+            _drafts.pop(self._pane, None)
         self.dismiss("")
