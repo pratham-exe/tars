@@ -68,10 +68,67 @@ def transfer_context(source: Session, target: Session) -> bool:
 
 # ── Task Delegation ──────────────────────────────────────────────────────────
 
+SCRATCHPAD_DIR = Path("/tmp/tars-delegation")
+
+
+def _setup_scratchpad(task: str) -> Path:
+    """Create a fresh scratchpad directory for a delegation."""
+    import shutil
+    if SCRATCHPAD_DIR.exists():
+        shutil.rmtree(SCRATCHPAD_DIR)
+    SCRATCHPAD_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Write the task file
+    (SCRATCHPAD_DIR / "task.md").write_text(f"# Task\n\n{task}\n")
+    # Create status file
+    (SCRATCHPAD_DIR / "status.json").write_text("{}")
+    # Create orchestrator notes
+    (SCRATCHPAD_DIR / "orchestrator.md").write_text("# Orchestrator Notes\n\n")
+
+    return SCRATCHPAD_DIR
+
+
+def read_scratchpad() -> dict:
+    """Read the current scratchpad state for display in TARS."""
+    result = {
+        "task": "",
+        "status": {},
+        "worker_reports": [],
+        "orchestrator_notes": "",
+    }
+    if not SCRATCHPAD_DIR.exists():
+        return result
+
+    task_file = SCRATCHPAD_DIR / "task.md"
+    if task_file.exists():
+        result["task"] = task_file.read_text()
+
+    status_file = SCRATCHPAD_DIR / "status.json"
+    if status_file.exists():
+        try:
+            result["status"] = json.loads(status_file.read_text())
+        except json.JSONDecodeError:
+            pass
+
+    orch_file = SCRATCHPAD_DIR / "orchestrator.md"
+    if orch_file.exists():
+        result["orchestrator_notes"] = orch_file.read_text()
+
+    # Read all worker report files
+    for f in sorted(SCRATCHPAD_DIR.glob("worker-*.md")):
+        result["worker_reports"].append({
+            "name": f.stem,
+            "content": f.read_text(),
+        })
+
+    return result
+
+
 def delegate_task(task: str, cwd: str | None = None) -> dict:
     """Spawn an orchestrator Jarvis session that breaks the task down and spawns its own workers.
-    Returns {"orchestrator": name, "workers": []} — workers are spawned by the orchestrator itself."""
+    Uses a shared scratchpad at /tmp/tars-delegation/ for inter-session communication."""
     try:
+        scratchpad = _setup_scratchpad(task)
         orch_name = "orchestrator"
         if not spawn_session_in_tmux(cwd=cwd, name=orch_name):
             return {}
@@ -85,31 +142,39 @@ def delegate_task(task: str, cwd: str | None = None) -> dict:
             if not orch_session or not orch_session.tmux_pane:
                 return
 
-            # Detect which tmux session to spawn workers in
             tmux_session = orch_session.tmux_pane.split(":")[0] if orch_session.tmux_pane else "ai"
             project_cwd = cwd or orch_session.cwd
 
             orch_prompt = (
-                f"You are the ORCHESTRATOR. Your job is to break a task into sub-tasks, spawn worker sessions, send them work, and track progress.\n\n"
+                f"You are the ORCHESTRATOR. You break tasks into sub-tasks, spawn workers, and track progress.\n\n"
                 f"TASK:\n{task}\n\n"
+                f"SHARED SCRATCHPAD: {scratchpad}\n"
+                f"This directory is shared between you and all workers for communication.\n\n"
+                f"FILES IN SCRATCHPAD:\n"
+                f"  - task.md — the original task (already written)\n"
+                f"  - status.json — you maintain this: {{\"worker-name\": \"status\"}}\n"
+                f"    Statuses: pending, in-progress, done, failed, blocked\n"
+                f"  - orchestrator.md — your notes, synthesis, decisions\n"
+                f"  - worker-<name>.md — each worker writes their progress/findings here\n\n"
                 f"HOW TO SPAWN WORKERS:\n"
-                f"Use the Bash tool to spawn each worker Jarvis session:\n"
                 f'  tmux new-window -d -t {tmux_session} -c "{project_cwd}" zsh -ic \'jarvis --name "worker-<name>"\'\n'
-                f"Wait ~8 seconds after spawning for each worker to boot.\n\n"
+                f"Wait ~8 seconds after spawning.\n\n"
                 f"HOW TO SEND TASKS TO WORKERS:\n"
-                f"1. Write the prompt to a temp file:  echo \'your prompt here\' > /tmp/tars-worker-msg.txt\n"
-                f"2. Send it:  tmux load-buffer /tmp/tars-worker-msg.txt && tmux paste-buffer -t {tmux_session}:<window> && tmux send-keys -t {tmux_session}:<window> Enter\n"
-                f"To find worker window numbers:  tmux list-windows -t {tmux_session} -F '#{{window_index}} #{{window_name}}'\n\n"
-                f"HOW TO CHECK WORKER PROGRESS:\n"
-                f"Worker transcripts are in ~/.claude/projects/ as JSONL files. Find them by session ID.\n"
-                f"Or list windows:  tmux list-windows -t {tmux_session}\n"
-                f"Read the last 30 lines of a worker's transcript to see what they're doing.\n\n"
-                f"WORKFLOW:\n"
-                f"1. Analyze the task and decide how many workers you need (2-4)\n"
-                f"2. Spawn that many worker sessions\n"
-                f"3. Send each worker their specific sub-task\n"
-                f"4. Wait for the user to ask for status — then check worker transcripts and report\n"
-                f"5. When all workers are done, synthesize results\n\n"
+                f"1. Write prompt to file:  echo 'prompt' > /tmp/tars-worker-msg.txt\n"
+                f"2. Send:  tmux load-buffer /tmp/tars-worker-msg.txt && tmux paste-buffer -t {tmux_session}:<window> && tmux send-keys -t {tmux_session}:<window> Enter\n"
+                f"Find windows:  tmux list-windows -t {tmux_session} -F '#{{window_index}} #{{window_name}}'\n\n"
+                f"IMPORTANT — TELL EACH WORKER:\n"
+                f"When sending a task to a worker, include these instructions in the prompt:\n"
+                f"  'SCRATCHPAD: Write your progress and findings to {scratchpad}/worker-<your-name>.md\n"
+                f"   Update it as you work. Write a summary when done.\n"
+                f"   Check {scratchpad}/orchestrator.md for instructions from the orchestrator.'\n\n"
+                f"YOUR WORKFLOW:\n"
+                f"1. Analyze the task, decide sub-tasks and number of workers (2-4)\n"
+                f"2. Spawn workers and send each their sub-task WITH scratchpad instructions\n"
+                f"3. Update status.json as workers progress\n"
+                f"4. Read worker-*.md files to check their progress\n"
+                f"5. Write synthesis to orchestrator.md when workers are done\n"
+                f"6. When asked for status, read all scratchpad files and report\n\n"
                 f"START NOW: Analyze the task, decide on sub-tasks, and spawn workers."
             )
             send_keys_to_tmux(orch_session.tmux_pane, orch_prompt)
@@ -118,7 +183,8 @@ def delegate_task(task: str, cwd: str | None = None) -> dict:
 
         return {
             "orchestrator": orch_name,
-            "workers": [],  # Workers will be spawned by the orchestrator itself
+            "workers": [],
+            "scratchpad": str(scratchpad),
         }
 
     except (FileNotFoundError, OSError):

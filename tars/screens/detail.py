@@ -221,9 +221,7 @@ class DetailScreen(Screen):
             f"[b]Session ID:[/b] {s.session_id}\n"
             f"[b]Started:[/b]    {s.started_at.strftime('%Y-%m-%d %H:%M:%S')} ({time_ago(s.started_at)})        "
             f"[b]Messages:[/b] {s.message_count}        "
-            f"[b]Tools:[/b] {s.tool_count}\n"
-            f"[b]Tokens:[/b]      {s.tokens_display} (in: {s.total_input_tokens:,}  out: {s.total_output_tokens:,})        "
-            f"[b]Context:[/b] {s.context_display} (cache read: {s.total_cache_read_tokens:,}  cache write: {s.total_cache_create_tokens:,})"
+            f"[b]Tools:[/b] {s.tool_count}"
         )
         self.query_one("#detail-info", Static).update(info)
 

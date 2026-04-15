@@ -6,6 +6,7 @@ from tars.modals.fullscreen import FullscreenPrompts, FullscreenTranscript
 from tars.modals.prompt import PromptModal
 from tars.modals.rename import RenameModal
 from tars.modals.resume import ResumePickerModal
+from tars.modals.scratchpad import ScratchpadModal
 from tars.modals.session_picker import SessionPickerModal
 from tars.modals.spawn import SpawnModal
 
@@ -17,6 +18,7 @@ __all__ = [
     "PromptModal",
     "RenameModal",
     "ResumePickerModal",
+    "ScratchpadModal",
     "SessionPickerModal",
     "SpawnModal",
 ]

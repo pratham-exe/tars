@@ -130,6 +130,7 @@ class DelegationScreen(Screen):
         Binding("s", "ask_status", "Status", priority=True),
         Binding("o", "goto_current", "Go to", priority=True),
         Binding("X", "kill_all", "Kill All", priority=True),
+        Binding("b", "toggle_scratchpad", "Board", priority=True),
         Binding("H", "prev_tab", show=False, priority=True),
         Binding("L", "next_tab", show=False, priority=True),
         Binding("j", "scroll_down", show=False, priority=True),
@@ -151,7 +152,7 @@ class DelegationScreen(Screen):
             with Horizontal(id="deleg-header"):
                 yield Label(f"[{ORANGE}][b]Delegation[/b][/{ORANGE}]", id="deleg-title")
                 yield Label(
-                    "[dim]q[/dim] back  [dim]H/L[/dim] switch  [dim]i[/dim] send  [dim]s[/dim] status  [dim]o[/dim] go to  [dim]X[/dim] kill all  [dim]j/k[/dim] scroll",
+                    "[dim]q[/dim] back  [dim]H/L[/dim] switch  [dim]i[/dim] send  [dim]s[/dim] status  [dim]b[/dim] board  [dim]o[/dim] go to  [dim]X[/dim] kill all",
                     id="deleg-hints",
                 )
             yield Static("", id="deleg-task")
@@ -352,6 +353,10 @@ class DelegationScreen(Screen):
             switch_to_tmux_pane(session.tmux_pane)
         else:
             self.notify("No tmux pane", timeout=2)
+
+    def action_toggle_scratchpad(self) -> None:
+        from tars.modals import ScratchpadModal
+        self.app.push_screen(ScratchpadModal())
 
     def action_kill_all(self) -> None:
         """Kill all workers and orchestrator."""

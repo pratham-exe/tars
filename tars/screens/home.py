@@ -69,6 +69,7 @@ Screen {
     height: auto;
 }
 
+
 #session-scroll {
     height: 1fr;
     padding: 0 1;

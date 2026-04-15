@@ -19,6 +19,7 @@ from tars.scanner.actions import (
     delegate_task,
     extract_session_context,
     generate_journal,
+    read_scratchpad,
     transfer_context,
 )
 
@@ -31,6 +32,7 @@ __all__ = [
     "delegate_task",
     "extract_session_context",
     "generate_journal",
+    "read_scratchpad",
     "get_session_history",
     "list_resumable_sessions",
     "parse_transcript_entries",
